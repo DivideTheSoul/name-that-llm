@@ -49,6 +49,7 @@ def run_pipeline(cfg: TrainConfig | None = None) -> Path | None:
         gradient_checkpointing_kwargs={"use_reentrant": False},
         ddp_find_unused_parameters=True,
         logging_steps=cfg.logging_steps,
+        disable_tqdm=False,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         save_total_limit=1,
