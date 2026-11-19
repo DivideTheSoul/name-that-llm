@@ -42,7 +42,7 @@ def load_tokenizer_and_lora_model(
         id2label=id2label,
         label2id=label2id,
         dtype=cfg.dtype,
-        device_map={"": f"cuda:{local_rank}"} if torch.cuda.is_available() else None,
+        low_cpu_mem_usage=True,
         local_files_only=True,
     )
     base_model.config.pad_token_id = tokenizer.pad_token_id
@@ -58,7 +58,6 @@ def load_tokenizer_and_lora_model(
     )
     model = get_peft_model(base_model, lora_config)
 
-    # Keep trainable LoRA & classifier head weights in fp32 so fp16 GradScaler works on T4
     for param in model.parameters():
         if param.requires_grad:
             param.data = param.data.to(torch.float32)
