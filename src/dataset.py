@@ -24,7 +24,7 @@ def detect_text_column(df: pd.DataFrame) -> str:
 
 
 class LLMNameDataset(Dataset):
-    """PyTorch Dataset for LLM response classification."""
+    """PyTorch Dataset for LLM response classification with dynamic batch padding."""
 
     def __init__(
         self,
@@ -43,20 +43,19 @@ class LLMNameDataset(Dataset):
     def __len__(self) -> int:
         return len(self.df)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, list[int] | torch.Tensor]:
         row = self.df.iloc[idx]
         encoding = self.tokenizer(
             str(row[self.text_col]),
             truncation=True,
             max_length=self.max_length,
-            padding="max_length",
-            return_tensors="pt",
         )
-        item = {key: val.squeeze(0) for key, val in encoding.items()}
-
+        item: dict[str, list[int] | torch.Tensor] = {
+            "input_ids": encoding["input_ids"],
+            "attention_mask": encoding["attention_mask"],
+        }
         if self.label2id is not None:
             item["labels"] = torch.tensor(self.label2id[row["model"]], dtype=torch.long)
-
         return item
 
 
@@ -68,7 +67,7 @@ def prepare_datasets(
     seed: int = 42,
 ) -> tuple[LLMNameDataset, LLMNameDataset, dict[int, str], dict[str, int], str]:
     """Load train.csv, create stratified train/validation splits, and return Datasets."""
-    train_df = pd.read_csv(data_dir / "train.csv")  #
+    train_df = pd.read_csv(data_dir / "train.csv")
     id2label, label2id = build_label_maps(train_df)
     text_col = detect_text_column(train_df)
 
