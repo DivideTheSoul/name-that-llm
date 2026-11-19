@@ -18,11 +18,11 @@ class TrainConfig:
     lora_dropout: float = 0.05
     target_modules: tuple[str, ...] = ("q_proj", "k_proj", "v_proj", "o_proj")
 
-    # Training hyperparameters
+    # Training hyperparameters (per_device_batch_size=2 x 2 GPUs x 4 accum = 16 effective)
     val_size: float = 0.1
     seed: int = 42
     learning_rate: float = 2e-4
-    train_batch_size: int = 4
+    train_batch_size: int = 2
     eval_batch_size: int = 4
     gradient_accumulation_steps: int = 4
     num_epochs: int = 3
@@ -48,7 +48,7 @@ class TrainConfig:
         return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
     @property
-    def torch_dtype(self) -> torch.dtype:
+    def dtype(self) -> torch.dtype:
         if not torch.cuda.is_available():
             return torch.float32
         return torch.bfloat16 if self.use_bf16 else torch.float16

@@ -21,7 +21,7 @@ def load_tokenizer_and_lora_model(
     id2label: dict[int, str],
     label2id: dict[str, int],
 ) -> tuple[PreTrainedTokenizerBase, PeftModel]:
-    """Load local Gemma 3 checkpoint and wrap with a LoRA sequence classification head."""
+    """Load local Gemma 3 checkpoint onto the current DDP rank and wrap with LoRA."""
     patch_peft_torchao()
     model_path = cfg.resolve_model_path()
 
@@ -34,11 +34,12 @@ def load_tokenizer_and_lora_model(
         num_labels=len(id2label),
         id2label=id2label,
         label2id=label2id,
-        torch_dtype=cfg.torch_dtype,
-        device_map="auto",
+        dtype=cfg.dtype,
         local_files_only=True,
     )
     base_model.config.pad_token_id = tokenizer.pad_token_id
+    base_model.config.use_cache = False
+    base_model.enable_input_require_grads()
 
     lora_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
@@ -48,5 +49,4 @@ def load_tokenizer_and_lora_model(
         target_modules=list(cfg.target_modules),
     )
     model = get_peft_model(base_model, lora_config)
-    model.print_trainable_parameters()
     return tokenizer, model

@@ -1,5 +1,10 @@
 from pathlib import Path
-from transformers import AutoTokenizer, Trainer, TrainingArguments
+from transformers import (
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    Trainer,
+    TrainingArguments,
+)
 
 from src.config import TrainConfig
 from src.dataset import prepare_datasets
@@ -7,8 +12,8 @@ from src.model import load_tokenizer_and_lora_model
 from src.predict import generate_submission
 
 
-def run_pipeline(cfg: TrainConfig | None = None) -> Path:
-    """Execute full end-to-end training, evaluation, and test submission generation."""
+def run_pipeline(cfg: TrainConfig | None = None) -> Path | None:
+    """Execute multi-GPU DDP training, evaluation, and submission generation."""
     cfg = cfg or TrainConfig()
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -26,6 +31,7 @@ def run_pipeline(cfg: TrainConfig | None = None) -> Path:
     )
 
     tokenizer, model = load_tokenizer_and_lora_model(cfg, id2label, label2id)
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer, pad_to_multiple_of=8)
 
     training_args = TrainingArguments(
         output_dir=str(cfg.output_dir),
@@ -39,9 +45,13 @@ def run_pipeline(cfg: TrainConfig | None = None) -> Path:
         weight_decay=cfg.weight_decay,
         bf16=cfg.use_bf16,
         fp16=not cfg.use_bf16,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        ddp_find_unused_parameters=False,
         logging_steps=cfg.logging_steps,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
+        save_total_limit=1,
         report_to="none",
     )
 
@@ -51,14 +61,18 @@ def run_pipeline(cfg: TrainConfig | None = None) -> Path:
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         processing_class=tokenizer,
+        data_collator=data_collator,
     )
+
+    if trainer.is_world_process_zero():
+        model.print_trainable_parameters()
 
     trainer.train()
 
-    # Save best LoRA adapter for reproducibility
-    adapter_dir = cfg.output_dir / "best_lora_adapter"
-    model.save_pretrained(adapter_dir)
-    tokenizer.save_pretrained(adapter_dir)
+    if trainer.is_world_process_zero():
+        adapter_dir = cfg.output_dir / "best_lora_adapter"
+        model.save_pretrained(adapter_dir)
+        tokenizer.save_pretrained(adapter_dir)
 
     return generate_submission(
         trainer=trainer,
